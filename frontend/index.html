@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitor de Red</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🌐 Monitor de Red Local</h1>
+            <div class="header-actions">
+                <button id="scanBtn" class="btn btn-primary">🔄 Escanear Ahora</button>
+                <button id="exportBtn" class="btn btn-success">📊 Exportar Excel</button>
+            </div>
+        </header>
+
+        <section class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon">📡</div>
+                <div class="stat-content">
+                    <h3>Ancho de Banda</h3>
+                    <p id="bandwidth" class="stat-value">0 Mbps</p>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon">💻</div>
+                <div class="stat-content">
+                    <h3>Dispositivos</h3>
+                    <p id="deviceCount" class="stat-value">0</p>
+                </div>
+            </div>
+
+            <div class="stat-card" id="saturationCard">
+                <div class="stat-icon">⚠️</div>
+                <div class="stat-content">
+                    <h3>Estado de Red</h3>
+                    <p id="saturationStatus" class="stat-value">Normal</p>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon">🔥</div>
+                <div class="stat-content">
+                    <h3>Mayor Consumidor</h3>
+                    <p id="topConsumer" class="stat-value">-</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="devices-section">
+            <h2>Dispositivos en Red</h2>
+            <div class="table-container">
+                <table id="devicesTable">
+                    <thead>
+                        <tr>
+                            <th>IP</th>
+                            <th>MAC</th>
+                            <th>Hostname</th>
+                            <th>Fabricante</th>
+                            <th>CPU</th>
+                            <th>RAM</th>
+                            <th>Disco</th>
+                            <th>Red</th>
+                            <th>Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody id="devicesBody">
+                        <tr>
+                            <td colspan="9" class="loading">Cargando dispositivos...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>
