@@ -1,47 +1,47 @@
 import threading
 import time
-import os
-from flask import Flask, jsonify, send_file, send_from_directory
+from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
 from network_scanner_simple import NetworkScanner
 from device_monitor import DeviceMonitor
-from excel_export import ExcelExporter
 
 app = Flask(__name__, static_folder='../frontend', static_url_path='')
 CORS(app)
 
+# Globales inicializadas
 scanner = NetworkScanner()
 monitor = DeviceMonitor()
 devices_data = {}
-network_stats = {}
+network_stats = {'bandwidth_usage': 0, 'is_saturated': False, 'total_devices': 0, 'active_devices': 0}
 
 def background_monitoring():
     global devices_data, network_stats
     local_ip = scanner.get_local_ip()
-    
+    print(f"Iniciando monitoreo. IP Local: {local_ip}")
+
     while True:
         try:
-            # 1. Escaneo de red (ARP)
-            raw_devices = scanner.scan_network()
+            # 1. Escaneo ARP
+            new_devices = scanner.scan_network()
             
-            # 2. Enriquecimiento SNMP para cada dispositivo encontrado
-            for ip, info in raw_devices.items():
-                if info['is_reachable'] and ip != local_ip:
-                    # Intentamos obtener datos reales si SNMP está activo
-                    remote_data = monitor.get_remote_metrics(ip)
-                    info.update(remote_data)
-                elif ip == local_ip:
-                    # Datos locales del propio servidor
+            # 2. SNMP y Métricas locales
+            for ip, info in new_devices.items():
+                if ip == local_ip:
                     info.update(scanner._get_local_metrics())
+                elif info['is_reachable']:
+                    # Intentar SNMP
+                    remote = monitor.get_remote_metrics(ip)
+                    info.update(remote)
             
-            devices_data = raw_devices
+            # 3. Guardar resultados
+            devices_data = new_devices
             network_stats = monitor.get_network_stats(devices_data)
+            print(f"Ciclo completado. Dispositivos: {len(devices_data)}")
             
-            print(f"Monitoreo actualizado: {len(devices_data)} dispositivos.")
-            time.sleep(30)
         except Exception as e:
-            print(f"Error en hilo de monitoreo: {e}")
-            time.sleep(10)
+            print(f"Error en bucle: {e}")
+        
+        time.sleep(30)
 
 @app.route('/')
 def index():
@@ -55,12 +55,9 @@ def get_devices():
 def get_stats():
     return jsonify(network_stats)
 
-@app.route('/api/scan-now', methods=['POST'])
-def scan_now():
-    # Forzar ejecución inmediata del hilo (simplificado)
-    return jsonify({'status': 'scanning_triggered'})
-
 if __name__ == '__main__':
+    # Lanzar el hilo
     t = threading.Thread(target=background_monitoring, daemon=True)
     t.start()
-    app.run(host='0.0.0.0', port=5000)
+    # Ejecutar Flask
+    app.run(host='0.0.0.0', port=5000, debug=False)
