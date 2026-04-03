@@ -2,13 +2,9 @@ const API_URL = `http://${window.location.hostname}:5000`;
 
 document.addEventListener('DOMContentLoaded', () => {
     loadDevices();
-    loadNetworkStats();
     
-    // Auto-refresh cada 30 segundos
-    setInterval(() => {
-        loadDevices();
-        loadNetworkStats();
-    }, 30000);
+    // Auto-refresh cada 15 segundos para datos de red más precisos
+    setInterval(loadDevices, 15000);
     
     document.getElementById('scanBtn').addEventListener('click', scanNow);
     document.getElementById('exportBtn').addEventListener('click', exportExcel);
@@ -20,12 +16,37 @@ async function loadDevices() {
         const data = await response.json();
         
         displayDevices(data.devices);
-        if (document.getElementById('deviceCount')) {
-            document.getElementById('deviceCount').textContent = data.devices.length;
-        }
+        updateDashboardStats(data.devices); // <--- Llenar tarjetas superiores
+        
     } catch (error) {
         console.error('Error cargando dispositivos:', error);
     }
+}
+
+function updateDashboardStats(devices) {
+    let totalBandwidth = 0;
+    let topConsumer = { name: '---', usage: 0 };
+
+    devices.forEach(device => {
+        const usage = parseFloat(device.network_usage) || 0;
+        totalBandwidth += usage;
+
+        if (usage > topConsumer.usage) {
+            topConsumer = { name: device.hostname || device.ip, usage: usage };
+        }
+    });
+
+    // Actualizar elementos en el HTML (asegúrate que los IDs coincidan)
+    if (document.getElementById('deviceCount')) 
+        document.getElementById('deviceCount').textContent = devices.length;
+    
+    if (document.getElementById('bandwidth')) 
+        document.getElementById('bandwidth').textContent = `${totalBandwidth.toFixed(2)} Mbps`;
+    
+    if (document.getElementById('topConsumer')) 
+        document.getElementById('topConsumer').textContent = topConsumer.usage > 0 
+            ? `${topConsumer.name} (${topConsumer.usage.toFixed(2)} Mbps)` 
+            : '---';
 }
 
 function displayDevices(devices) {
@@ -41,7 +62,7 @@ function displayDevices(devices) {
             <td>${formatUsage(device.cpu_usage)}</td>
             <td>${formatUsage(device.ram_usage)}</td>
             <td>${formatUsage(device.disk_usage)}</td>
-            <td style="color: #10b981; font-weight: bold;">${(device.network_usage || 0).toFixed(2)} MB</td>
+            <td style="color: #10b981; font-weight: bold;">${(device.network_usage || 0).toFixed(2)} Mbps</td>
             <td>
                 <span class="badge ${device.is_reachable ? 'badge-success' : 'badge-danger'}">
                     ${device.is_reachable ? 'Activo' : 'Inactivo'}
@@ -57,7 +78,6 @@ function displayDevices(devices) {
 function formatUsage(value) {
     const percentage = Math.round(value || 0);
     const barColor = percentage > 85 ? '#ef4444' : percentage > 60 ? '#f59e0b' : '#3b82f6';
-    
     return `
         <div class="usage-container" style="display:flex; align-items:center; gap:8px;">
             <span style="min-width:32px; font-size: 0.85rem;">${percentage}%</span>
@@ -69,39 +89,19 @@ function formatUsage(value) {
 }
 
 function verProcesos(ip) {
-    // Redirige a la página de procesos pasando la IP como parámetro
     window.location.href = `/procesos?ip=${ip}`;
-}
-
-async function loadNetworkStats() {
-    try {
-        const response = await fetch(`${API_URL}/api/network-stats`);
-        const stats = await response.json();
-        const bandwidthEl = document.getElementById('bandwidth');
-        if (bandwidthEl) {
-            bandwidthEl.textContent = `${stats.bandwidth_usage || 0} Mbps`;
-        }
-    } catch (error) {
-        console.error('Error stats:', error);
-    }
 }
 
 async function scanNow() {
     const btn = document.getElementById('scanBtn');
-    if (!btn) return;
-
     btn.disabled = true;
-    const originalText = btn.textContent;
     btn.textContent = '⏳ Escaneando...';
-    
     try {
         await fetch(`${API_URL}/api/scan-now`, { method: 'POST' });
         await loadDevices();
-    } catch (error) {
-        alert('Error al iniciar el escaneo');
     } finally {
         btn.disabled = false;
-        btn.textContent = originalText;
+        btn.textContent = '🔄 Escanear Ahora';
     }
 }
 
@@ -113,10 +113,6 @@ async function exportExcel() {
         const a = document.createElement('a');
         a.href = url;
         a.download = `Reporte_Red_Sentinel_${new Date().toLocaleDateString()}.xlsx`;
-        document.body.appendChild(a);
         a.click();
-        document.body.removeChild(a);
-    } catch (error) {
-        alert('Error al exportar reporte');
-    }
+    } catch (error) { alert('Error al exportar'); }
 }
