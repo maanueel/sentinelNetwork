@@ -48,7 +48,7 @@ class NetworkScanner:
         try:
             interface = self.get_network_interface()
             result = subprocess.run(
-                ['sudo', 'arp-scan', '--localnet', '--ignoredups'], # --ignoredups ayuda en algunas redes
+                ['sudo', '/usr/sbin/arp-scan', '--localnet', '--ignoredups'],
                 capture_output=True,
                 text=True,
                 timeout=30
