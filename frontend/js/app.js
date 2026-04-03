@@ -1,5 +1,4 @@
-const API_URL = window.location.origin.replace(':80', ':5000');
-
+const API_URL = 'http://192.168.1.24:5000';
 let refreshInterval;
 
 // Inicializar
