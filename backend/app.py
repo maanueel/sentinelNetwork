@@ -1,12 +1,19 @@
-from flask import Flask, jsonify, send_file
+from flask import Flask, jsonify, send_file, send_from_directory
 from flask_cors import CORS
-from network_scanner import NetworkScanner
+from network_scanner_simple import NetworkScanner
 from device_monitor import DeviceMonitor
 from excel_export import ExcelExporter
 import threading
 import time
+import os
 
-app = Flask(__name__)
+# Configurar rutas
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FRONTEND_DIR = os.path.join(os.path.dirname(BASE_DIR), 'frontend')
+
+app = Flask(__name__, 
+            static_folder=FRONTEND_DIR,
+            static_url_path='')
 CORS(app)
 
 # Instancias globales
@@ -34,6 +41,16 @@ def background_monitoring():
         except Exception as e:
             print(f"Error en monitoreo: {e}")
             time.sleep(30)
+
+# Ruta raíz - servir index.html
+@app.route('/')
+def index():
+    return send_from_directory(FRONTEND_DIR, 'index.html')
+
+# Servir archivos estáticos (CSS, JS)
+@app.route('/<path:path>')
+def serve_static(path):
+    return send_from_directory(FRONTEND_DIR, path)
 
 @app.route('/api/devices', methods=['GET'])
 def get_devices():
@@ -69,6 +86,9 @@ if __name__ == '__main__':
     # Iniciar monitoreo en segundo plano
     monitor_thread = threading.Thread(target=background_monitoring, daemon=True)
     monitor_thread.start()
+    
+    print(f"Frontend directory: {FRONTEND_DIR}")
+    print(f"Servidor iniciando en http://0.0.0.0:5000")
     
     # Iniciar servidor Flask
     app.run(host='0.0.0.0', port=5000, debug=False)
