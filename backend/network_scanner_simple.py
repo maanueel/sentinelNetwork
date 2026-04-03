@@ -55,6 +55,17 @@ class NetworkScanner:
         return devices
 
     def _get_hostname(self, ip):
+    # Intentar primero por SNMP (es más fiable en red local)
+        try:
+            # El OID 1.3.6.1.2.1.1.5.0 es el nombre del sistema
+          res = subprocess.run(['snmpget', '-v', '2c', '-c', 'public', ip, '1.3.6.1.2.1.1.5.0'], 
+                             capture_output=True, text=True, timeout=1)
+          if "STRING:" in res.stdout:
+            return res.stdout.split("STRING:")[1].strip().replace('"', '')
+        except:
+           pass
+        
+    # Si falla SNMP, intentar el método tradicional
         try:
             return socket.gethostbyaddr(ip)[0]
         except:

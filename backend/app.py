@@ -15,32 +15,18 @@ devices_data = {}
 network_stats = {'bandwidth_usage': 0, 'is_saturated': False, 'total_devices': 0, 'active_devices': 0}
 
 def background_monitoring():
-    global devices_data, network_stats
-    local_ip = scanner.get_local_ip()
-    print(f"Iniciando monitoreo. IP Local: {local_ip}")
-
+    global devices_data
     while True:
-        try:
-            # 1. Escaneo ARP
-            new_devices = scanner.scan_network()
-            
-            # 2. SNMP y Métricas locales
-            for ip, info in new_devices.items():
-                if ip == local_ip:
-                    info.update(scanner._get_local_metrics())
-                elif info['is_reachable']:
-                    # Intentar SNMP
-                    remote = monitor.get_remote_metrics(ip)
-                    info.update(remote)
-            
-            # 3. Guardar resultados
-            devices_data = new_devices
-            network_stats = monitor.get_network_stats(devices_data)
-            print(f"Ciclo completado. Dispositivos: {len(devices_data)}")
-            
-        except Exception as e:
-            print(f"Error en bucle: {e}")
+        temp_devices = scanner.scan_network() # Escaneo rápido
         
+        for ip, info in temp_devices.items():
+            if info['is_reachable'] and ip != local_ip:
+                # Si esto tarda mucho, la web verá 'temp_devices' vacío si no tenemos cuidado
+                extra = monitor.get_remote_metrics(ip)
+                info.update(extra)
+        
+        # SOLO ACTUALIZAMOS LA VARIABLE GLOBAL AL FINAL DEL CICLO
+        devices_data = temp_devices 
         time.sleep(30)
 
 @app.route('/')
