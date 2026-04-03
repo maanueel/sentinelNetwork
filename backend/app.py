@@ -8,25 +8,44 @@ from device_monitor import DeviceMonitor
 app = Flask(__name__, static_folder='../frontend', static_url_path='')
 CORS(app)
 
-# Globales inicializadas
 scanner = NetworkScanner()
 monitor = DeviceMonitor()
-devices_data = {}
-network_stats = {'bandwidth_usage': 0, 'is_saturated': False, 'total_devices': 0, 'active_devices': 0}
+devices_data = {} # Iniciamos vacío pero global
+network_stats = {}
 
 def background_monitoring():
-    global devices_data
+    global devices_data, network_stats
+    local_ip = scanner.get_local_ip()
+    
     while True:
-        temp_devices = scanner.scan_network() # Escaneo rápido
+        try:
+            print("--- Iniciando ciclo de monitoreo ---")
+            # 1. Escaneo ARP (Esto llena la lista básica)
+            new_devices = scanner.scan_network()
+            
+            if not new_devices:
+                print("Advertencia: No se encontraron dispositivos en el escaneo ARP.")
+            
+            # 2. Intentar enriquecer cada dispositivo
+            for ip, info in new_devices.items():
+                try:
+                    if ip == local_ip:
+                        info.update(scanner._get_local_metrics())
+                    elif info.get('is_reachable'):
+                        # SNMP puede ser lento, por eso lo envolvemos en otro try
+                        remote_metrics = monitor.get_remote_metrics(ip)
+                        info.update(remote_metrics)
+                except Exception as e_device:
+                    print(f"Error procesando métricas para {ip}: {e_device}")
+            
+            # 3. Actualización final (Atómica)
+            devices_data = new_devices
+            network_stats = monitor.get_network_stats(devices_data)
+            print(f"Ciclo completado con éxito: {len(devices_data)} dispositivos detectados.")
+            
+        except Exception as e_global:
+            print(f"ERROR CRÍTICO en el hilo de monitoreo: {e_global}")
         
-        for ip, info in temp_devices.items():
-            if info['is_reachable'] and ip != local_ip:
-                # Si esto tarda mucho, la web verá 'temp_devices' vacío si no tenemos cuidado
-                extra = monitor.get_remote_metrics(ip)
-                info.update(extra)
-        
-        # SOLO ACTUALIZAMOS LA VARIABLE GLOBAL AL FINAL DEL CICLO
-        devices_data = temp_devices 
         time.sleep(30)
 
 @app.route('/')
@@ -35,6 +54,7 @@ def index():
 
 @app.route('/api/devices')
 def get_devices():
+    # Si devices_data está vacío, devolvemos una lista vacía pero con estructura correcta
     return jsonify({'devices': list(devices_data.values()), 'total': len(devices_data)})
 
 @app.route('/api/network-stats')
@@ -42,8 +62,6 @@ def get_stats():
     return jsonify(network_stats)
 
 if __name__ == '__main__':
-    # Lanzar el hilo
     t = threading.Thread(target=background_monitoring, daemon=True)
     t.start()
-    # Ejecutar Flask
     app.run(host='0.0.0.0', port=5000, debug=False)
