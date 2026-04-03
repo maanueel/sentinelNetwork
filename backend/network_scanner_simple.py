@@ -46,8 +46,9 @@ class NetworkScanner:
         print(f"Interfaz: {interface}")
         
         try:
+            interface = self.get_network_interface()
             result = subprocess.run(
-                ['sudo', 'arp-scan', '--localnet'],
+                 ['sudo', 'arp-scan', '--interface=' + interface, '--localnet'],
                 capture_output=True,
                 text=True,
                 timeout=30
