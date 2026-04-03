@@ -4,57 +4,85 @@
     <meta charset="UTF-8">
     <title>Procesos del Sistema - Sentinel</title>
     <style>
-        body { background: #0f172a; color: white; font-family: 'Segoe UI', sans-serif; padding: 40px; }
+        body { background: #0f172a; color: white; font-family: 'Segoe UI', sans-serif; padding: 40px; margin: 0; }
         .container { max-width: 900px; margin: auto; }
         .card { background: #1e293b; padding: 30px; border-radius: 15px; border: 1px solid #334155; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
         .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #334155; padding-bottom: 20px; margin-bottom: 20px; }
         .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px; }
         .info-box { background: #0f172a; padding: 15px; border-radius: 10px; border-left: 4px solid #a855f7; }
-        .proc-list { list-style: none; padding: 0; }
-        .proc-item { padding: 12px; border-bottom: 1px solid #334155; display: flex; align-items: center; color: #cbd5e1; }
-        .proc-item:hover { background: #2d3748; }
-        .btn-back { background: #334155; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: bold; }
-        .badge { color: #f472b6; margin-right: 15px; font-weight: bold; }
+        .full-width { grid-column: span 2; border-left-color: #f472b6; }
+        .proc-list { list-style: none; padding: 0; margin: 0; }
+        .proc-item { padding: 12px; border-bottom: 1px solid #334155; display: flex; align-items: center; color: #cbd5e1; transition: 0.2s; }
+        .proc-item:hover { background: #2d3748; color: white; }
+        .btn-back { background: #334155; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 0.9rem; }
+        .btn-back:hover { background: #475569; }
+        .badge { color: #f472b6; margin-right: 15px; font-weight: bold; font-family: monospace; }
+        h3 { margin-top: 0; color: #94a3b8; font-size: 1rem; text-transform: uppercase; letter-spacing: 1px; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1 id="hostname">Cargando...</h1>
+            <div>
+                <small style="color: #94a3b8; display: block; margin-bottom: 5px;">MONITOREO DINÁMICO</small>
+                <h1 id="hostname" style="margin: 0;">Cargando equipo...</h1>
+            </div>
             <a href="/" class="btn-back">⬅ Volver al Monitor</a>
         </div>
+
         <div class="card">
             <div class="info-grid">
+                <div class="info-box full-width">
+                    <small style="color: #f472b6;">SISTEMA OPERATIVO / MODELO</small>
+                    <div id="sys_model" style="font-size: 1.1rem; margin-top: 5px; font-weight: 500;">---</div>
+                </div>
                 <div class="info-box">
-                    <small style="color: #a855f7;">MODELO PROCESADOR</small>
+                    <small style="color: #a855f7;">PROCESADOR DETECTADO</small>
                     <div id="cpu_model" style="font-size: 1.1rem; margin-top: 5px;">---</div>
                 </div>
                 <div class="info-box">
-                    <small style="color: #a855f7;">CAPACIDAD RAM</small>
+                    <small style="color: #a855f7;">MEMORIA RAM TOTAL</small>
                     <div id="ram_total" style="font-size: 1.1rem; margin-top: 5px;">---</div>
                 </div>
             </div>
-            <h3>Top 10 Procesos en Ejecución</h3>
+
+            <h3>Top 10 Procesos Activos</h3>
             <ul id="process_list" class="proc-list">
-                <li>Obteniendo lista de procesos...</li>
+                <li class="proc-item">Obteniendo lista de procesos mediante SNMP...</li>
             </ul>
         </div>
     </div>
+
     <script>
         const params = new URLSearchParams(window.location.search);
         const ip = params.get('ip');
+        const API_URL = `http://${window.location.hostname}:5000`;
 
-        fetch(`/api/processes/${ip}`)
-            .then(res => res.json())
-            .then(data => {
-                document.getElementById('hostname').innerText = `Equipo: ${data.hostname}`;
-                document.getElementById('cpu_model').innerText = data.cpu_model;
-                document.getElementById('ram_total').innerText = data.total_ram;
-                const list = document.getElementById('process_list');
-                list.innerHTML = data.processes.map(p => `
-                    <li class="proc-item"><span class="badge">TASK</span> ${p}</li>
-                `).join('');
-            });
+        if (!ip) {
+            document.getElementById('hostname').innerText = "Error: No se especificó IP";
+        } else {
+            fetch(`${API_URL}/api/processes/${ip}`)
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById('hostname').innerText = `Equipo: ${data.hostname}`;
+                    document.getElementById('cpu_model').innerText = data.cpu_model;
+                    document.getElementById('sys_model').innerText = data.sys_model || "No detectado";
+                    document.getElementById('ram_total').innerText = data.total_ram;
+                    
+                    const list = document.getElementById('process_list');
+                    if (data.processes && data.processes.length > 0) {
+                        list.innerHTML = data.processes.map(p => `
+                            <li class="proc-item"><span class="badge">TASK</span> ${p}</li>
+                        `).join('');
+                    } else {
+                        list.innerHTML = '<li class="proc-item">No se pudieron obtener procesos. Verifique comunidad SNMP.</li>';
+                    }
+                })
+                .catch(err => {
+                    console.error(err);
+                    document.getElementById('process_list').innerHTML = '<li class="proc-item" style="color: #ef4444;">Error de conexión con el servidor.</li>';
+                });
+        }
     </script>
 </body>
 </html>

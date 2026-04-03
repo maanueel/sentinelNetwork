@@ -23,7 +23,7 @@ class DeviceMonitor:
     def get_remote_metrics(self, ip):
         metrics = {'cpu_usage': 0, 'ram_usage': 0, 'disk_usage': 0, 'network_usage': 0}
         
-        # 1. CPU: Promedio de todos los núcleos (basado en tu captura)
+        # CPU: Promedio (Ya funcionando)
         try:
             res = subprocess.run(['snmpwalk', '-v', '2c', '-c', self.community, ip, '1.3.6.1.2.1.25.3.3.1.2'],
                                capture_output=True, text=True, timeout=1.5)
@@ -32,48 +32,54 @@ class DeviceMonitor:
                 if loads: metrics['cpu_usage'] = round(sum(loads) / len(loads), 2)
         except: pass
         
-        # 2. RAM: Buscamos el índice que diga "Physical Memory"
+        # RAM e Índices dinámicos
+        t_ram = self._raw_snmp_get(ip, '1.3.6.1.2.1.25.2.3.1.5.3')
+        u_ram = self._raw_snmp_get(ip, '1.3.6.1.2.1.25.2.3.1.6.3')
+        if t_ram and u_ram:
+            metrics['ram_usage'] = round((float(u_ram) / float(t_ram)) * 100, 2)
+
+        # RED: Buscamos la interfaz activa con más tráfico (Búsqueda dinámica)
         try:
-            # Buscamos en la tabla de almacenamiento cuál es RAM (tipo .2) o nombre "Physical Memory"
-            t_ram = self._raw_snmp_get(ip, '1.3.6.1.2.1.25.2.3.1.5.3') # Índice 3 suele ser RAM
-            u_ram = self._raw_snmp_get(ip, '1.3.6.1.2.1.25.2.3.1.6.3')
-            if t_ram and u_ram and int(t_ram) > 0:
-                metrics['ram_usage'] = round((float(u_ram) / float(t_ram)) * 100, 2)
+            res = subprocess.run(['snmpwalk', '-v', '2c', '-c', self.community, ip, '1.3.6.1.2.1.2.2.1.10'],
+                               capture_output=True, text=True, timeout=1.5)
+            if res.returncode == 0:
+                octets = [int(l.split('Counter32:')[1]) for l in res.stdout.strip().split('\n') if 'Counter32:' in l]
+                if octets: metrics['network_usage'] = round(max(octets) / (1024 * 1024), 2)
         except: pass
 
-        # 3. DISCO: Búsqueda dinámica para evitar el 0%
-        # Intentamos con el índice 1, si falla, el monitor no marcará 0 erróneamente
-        for idx in ['1', '2', '4']: # Índices comunes para C:
-            t_disk = self._raw_snmp_get(ip, f'1.3.6.1.2.1.25.2.3.1.5.{idx}')
-            u_disk = self._raw_snmp_get(ip, f'1.3.6.1.2.1.25.2.3.1.6.{idx}')
-            if t_disk and u_disk and int(t_disk) > 1000: # Filtro para asegurar que es un disco real
-                metrics['disk_usage'] = round((float(u_disk) / float(t_disk)) * 100, 2)
-                break
-
-        # 4. RED: Captura de octetos (Tráfico acumulado)
-        net = self._raw_snmp_get(ip, '1.3.6.1.2.1.2.2.1.10.10') or self._raw_snmp_get(ip, '1.3.6.1.2.1.2.2.1.10.1')
-        if net: metrics['network_usage'] = round(float(net) / (1024 * 1024), 2)
+        # DISCO (C:)
+        t_disk = self._raw_snmp_get(ip, '1.3.6.1.2.1.25.2.3.1.5.1')
+        u_disk = self._raw_snmp_get(ip, '1.3.6.1.2.1.25.2.3.1.6.1')
+        if t_disk and u_disk:
+            metrics['disk_usage'] = round((float(u_disk) / float(t_disk)) * 100, 2)
 
         return metrics
 
     def get_process_details(self, ip):
-        # Filtro para obtener el modelo real del procesador ignorando drivers de software
-        cpu_model = "Procesador Intel/AMD"
+        # 1. Nombre Real del Procesador (Filtro avanzado)
+        cpu_model = "Procesador Genérico"
         try:
             res = subprocess.run(['snmpwalk', '-v', '2c', '-c', self.community, ip, '1.3.6.1.2.1.25.3.2.1.3'],
                                capture_output=True, text=True, timeout=2)
             if res.returncode == 0:
-                for line in res.stdout.strip().split('\n'):
-                    if 'Intel' in line or 'AMD' in line:
-                        cpu_model = line.split('STRING: ')[1].replace('"', '')
-                        break
+                # Buscamos la línea que diga Intel o AMD y NO sea un driver virtual
+                candidates = [l.split('STRING: ')[1].replace('"', '') for l in res.stdout.strip().split('\n') 
+                             if ('Intel' in l or 'AMD' in l) and 'OneNote' not in l]
+                if candidates: cpu_model = candidates[0]
         except: pass
+
+        # 2. Modelo del Sistema (SysDescr)
+        sys_model = self._raw_snmp_get(ip, '1.3.6.1.2.1.1.1.0') or "Windows Device"
+        # Limpiamos el string largo de Windows para que solo diga la versión
+        if "Software:" in sys_model:
+            sys_model = sys_model.split("Software:")[1].split("-")[0].strip()
 
         t_ram_units = self._raw_snmp_get(ip, '1.3.6.1.2.1.25.2.3.1.5.3') or "0"
         return {
             'hostname': self._raw_snmp_get(ip, '1.3.6.1.2.1.1.5.0') or ip,
             'cpu_model': cpu_model,
-            'total_ram': f"{round(float(t_ram_units) * 65536 / (1024**3), 1)} GB" if t_ram_units != "0" else "16 GB",
+            'sys_model': sys_model, # Nuevo campo
+            'total_ram': f"{round(float(t_ram_units) * 65536 / (1024**3), 1)} GB" if t_ram_units != "0" else "N/A",
             'processes': self._get_remote_processes(ip)
         }
 
@@ -85,12 +91,3 @@ class DeviceMonitor:
                 return [l.split('STRING: ')[1].replace('"', '') for l in res.stdout.split('\n') if 'STRING:' in l][:10]
         except: pass
         return []
-
-    def get_network_stats(self, devices):
-        stats = {'bandwidth_usage': 0, 'total_devices': len(devices)}
-        curr_io = psutil.net_io_counters()
-        if self.previous_net_io:
-            diff = (curr_io.bytes_sent + curr_io.bytes_recv) - (self.previous_net_io.bytes_sent + self.previous_net_io.bytes_recv)
-            stats['bandwidth_usage'] = round((diff * 8) / (1024 * 1024), 2)
-        self.previous_net_io = curr_io
-        return stats
