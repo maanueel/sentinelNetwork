@@ -10,42 +10,27 @@ CORS(app)
 
 scanner = NetworkScanner()
 monitor = DeviceMonitor()
-devices_data = {} # Iniciamos vacío pero global
-network_stats = {}
+devices_data = {}
+network_stats = {'bandwidth_usage': 0, 'is_saturated': False, 'total_devices': 0, 'active_devices': 0, 'top_consumer': 'Ninguno'}
 
 def background_monitoring():
     global devices_data, network_stats
     local_ip = scanner.get_local_ip()
-    
     while True:
         try:
             print("--- Iniciando ciclo de monitoreo ---")
-            # 1. Escaneo ARP (Esto llena la lista básica)
             new_devices = scanner.scan_network()
-            
-            if not new_devices:
-                print("Advertencia: No se encontraron dispositivos en el escaneo ARP.")
-            
-            # 2. Intentar enriquecer cada dispositivo
             for ip, info in new_devices.items():
-                try:
-                    if ip == local_ip:
-                        info.update(scanner._get_local_metrics())
-                    elif info.get('is_reachable'):
-                        # SNMP puede ser lento, por eso lo envolvemos en otro try
-                        remote_metrics = monitor.get_remote_metrics(ip)
-                        info.update(remote_metrics)
-                except Exception as e_device:
-                    print(f"Error procesando métricas para {ip}: {e_device}")
+                if ip == local_ip:
+                    info.update(scanner._get_local_metrics())
+                elif info.get('is_reachable'):
+                    info.update(monitor.get_remote_metrics(ip))
             
-            # 3. Actualización final (Atómica)
             devices_data = new_devices
             network_stats = monitor.get_network_stats(devices_data)
-            print(f"Ciclo completado con éxito: {len(devices_data)} dispositivos detectados.")
-            
-        except Exception as e_global:
-            print(f"ERROR CRÍTICO en el hilo de monitoreo: {e_global}")
-        
+            print("--- Ciclo completado con éxito ---")
+        except Exception as e:
+            print(f"Error en hilo: {e}")
         time.sleep(30)
 
 @app.route('/')
@@ -54,14 +39,18 @@ def index():
 
 @app.route('/api/devices')
 def get_devices():
-    # Si devices_data está vacío, devolvemos una lista vacía pero con estructura correcta
     return jsonify({'devices': list(devices_data.values()), 'total': len(devices_data)})
 
 @app.route('/api/network-stats')
 def get_stats():
     return jsonify(network_stats)
 
+@app.route('/api/scan-now', methods=['GET', 'POST'])
+def scan_now():
+    # En una versión real aquí dispararías el hilo, por ahora solo confirmamos
+    return jsonify({'status': 'success', 'message': 'Escaneo solicitado'})
+
 if __name__ == '__main__':
     t = threading.Thread(target=background_monitoring, daemon=True)
     t.start()
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    app.run(host='0.0.0.0', port=5000)
