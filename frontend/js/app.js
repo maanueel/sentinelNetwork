@@ -144,3 +144,19 @@ async function exportExcel() {
 function showError(message) {
     alert(message);
 }
+document.getElementById('processBtn').onclick = function() {
+    // Usaremos la IP de PixelPusher por ahora (192.168.1.22)
+    const targetIp = '192.168.1.22'; 
+    
+    fetch(`/api/processes/${targetIp}`)
+        .then(res => res.json())
+        .then(data => {
+            document.getElementById('m-hostname').innerText = `Equipo: ${data.hostname}`;
+            document.getElementById('m-cpu').innerText = data.cpu_model;
+            document.getElementById('m-ram').innerText = data.total_ram;
+            
+            const list = document.getElementById('m-list');
+            list.innerHTML = data.processes.map(p => `<li>${p}</li>`).join('');
+            document.getElementById('processModal').style.display = 'block';
+        });
+};

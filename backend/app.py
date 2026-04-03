@@ -50,6 +50,11 @@ def scan_now():
     # En una versión real aquí dispararías el hilo, por ahora solo confirmamos
     return jsonify({'status': 'success', 'message': 'Escaneo solicitado'})
 
+@app.route('/api/processes/<ip>')
+def get_device_processes(ip):
+    data = monitor.get_process_details(ip)
+    return jsonify(data)
+
 if __name__ == '__main__':
     t = threading.Thread(target=background_monitoring, daemon=True)
     t.start()
