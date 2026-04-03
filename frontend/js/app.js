@@ -1,7 +1,6 @@
 const API_URL = 'http://192.168.1.24:5000';
 let refreshInterval;
 
-// Inicializar
 document.addEventListener('DOMContentLoaded', () => {
     loadDevices();
     loadNetworkStats();
@@ -15,6 +14,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // Event listeners
     document.getElementById('scanBtn').addEventListener('click', scanNow);
     document.getElementById('exportBtn').addEventListener('click', exportExcel);
+    
+    // El botón de la cabecera por defecto abre el servidor local o el equipo principal
+    const procBtn = document.getElementById('processBtn');
+    if(procBtn) {
+        procBtn.addEventListener('click', () => verProcesos('192.168.1.24'));
+    }
 });
 
 async function loadDevices() {
@@ -23,7 +28,7 @@ async function loadDevices() {
         const data = await response.json();
         
         displayDevices(data.devices);
-        document.getElementById('deviceCount').textContent = data.total;
+        document.getElementById('deviceCount').textContent = data.devices.length;
     } catch (error) {
         console.error('Error cargando dispositivos:', error);
         showError('No se pudo conectar con el servidor');
@@ -34,7 +39,6 @@ async function loadNetworkStats() {
     try {
         const response = await fetch(`${API_URL}/api/network-stats`);
         const stats = await response.json();
-        
         displayNetworkStats(stats);
     } catch (error) {
         console.error('Error cargando estadísticas:', error);
@@ -44,8 +48,8 @@ async function loadNetworkStats() {
 function displayDevices(devices) {
     const tbody = document.getElementById('devicesBody');
     
-    if (devices.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="loading">No se encontraron dispositivos</td></tr>';
+    if (!devices || devices.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" class="loading">No se encontraron dispositivos</td></tr>';
         return;
     }
     
@@ -53,57 +57,39 @@ function displayDevices(devices) {
         <tr>
             <td>${device.ip}</td>
             <td><code>${device.mac}</code></td>
-            <td>${device.hostname}</td>
-            <td>${device.vendor}</td>
-            <td>${formatUsage(device.cpu_usage)}</td>
-            <td>${formatUsage(device.ram_usage)}</td>
-            <td>${formatUsage(device.disk_usage)}</td>
-            <td>${device.network_usage.toFixed(2)} MB</td>
+            <td>${device.hostname || 'Desconocido'}</td>
+            <td>${device.vendor || 'Genérico'}</td>
+            <td>${formatUsage(device.cpu_usage || 0)}</td>
+            <td>${formatUsage(device.ram_usage || 0)}</td>
+            <td>${formatUsage(device.disk_usage || 0)}</td>
+            <td>${(device.network_usage || 0).toFixed(2)} MB</td>
             <td>
                 <span class="badge ${device.is_reachable ? 'badge-success' : 'badge-danger'}">
                     ${device.is_reachable ? 'Activo' : 'Inactivo'}
                 </span>
             </td>
+            <td>
+                <button onclick="verProcesos('${device.ip}')" class="btn-mini">⚙️</button>
+            </td>
         </tr>
     `).join('');
-}
-
-function displayNetworkStats(stats) {
-    // Ancho de banda
-    document.getElementById('bandwidth').textContent = `${stats.bandwidth_usage} Mbps`;
-    
-    // Estado de saturación
-    const saturationCard = document.getElementById('saturationCard');
-    const saturationStatus = document.getElementById('saturationStatus');
-    
-    if (stats.is_saturated) {
-        saturationStatus.textContent = '⚠️ Saturada';
-        saturationCard.classList.add('alert');
-    } else {
-        saturationStatus.textContent = '✓ Normal';
-        saturationCard.classList.remove('alert');
-    }
-    
-    // Mayor consumidor
-    if (stats.top_consumer) {
-        const top = stats.top_consumer;
-        document.getElementById('topConsumer').textContent = 
-            `${top.hostname} (${top.ip})`;
-    } else {
-        document.getElementById('topConsumer').textContent = '-';
-    }
 }
 
 function formatUsage(value) {
     const percentage = Math.round(value);
     const barClass = percentage > 80 ? 'high' : '';
-    
     return `
-        ${percentage}%
-        <div class="usage-bar">
-            <div class="usage-fill ${barClass}" style="width: ${percentage}%"></div>
+        <div class="usage-container">
+            <span>${percentage}%</span>
+            <div class="usage-bar">
+                <div class="usage-fill ${barClass}" style="width: ${percentage}%"></div>
+            </div>
         </div>
     `;
+}
+
+function verProcesos(ip) {
+    window.location.href = `/procesos?ip=${ip}`;
 }
 
 async function scanNow() {
@@ -113,8 +99,10 @@ async function scanNow() {
     
     try {
         await fetch(`${API_URL}/api/scan-now`, { method: 'POST' });
-        await loadDevices();
-        await loadNetworkStats();
+        setTimeout(() => {
+            loadDevices();
+            loadNetworkStats();
+        }, 2000);
     } catch (error) {
         showError('Error al escanear');
     } finally {
@@ -127,36 +115,32 @@ async function exportExcel() {
     try {
         const response = await fetch(`${API_URL}/api/export-excel`);
         const blob = await response.blob();
-        
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = `reporte_red_${new Date().getTime()}.xlsx`;
         document.body.appendChild(a);
         a.click();
-        window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
     } catch (error) {
         showError('Error al exportar');
     }
 }
 
-function showError(message) {
-    alert(message);
-}
-document.getElementById('processBtn').onclick = function() {
-    // Usaremos la IP de PixelPusher por ahora (192.168.1.22)
-    const targetIp = '192.168.1.22'; 
+function displayNetworkStats(stats) {
+    document.getElementById('bandwidth').textContent = `${stats.bandwidth_usage || 0} Mbps`;
+    const saturationCard = document.getElementById('saturationCard');
+    const saturationStatus = document.getElementById('saturationStatus');
     
-    fetch(`/api/processes/${targetIp}`)
-        .then(res => res.json())
-        .then(data => {
-            document.getElementById('m-hostname').innerText = `Equipo: ${data.hostname}`;
-            document.getElementById('m-cpu').innerText = data.cpu_model;
-            document.getElementById('m-ram').innerText = data.total_ram;
-            
-            const list = document.getElementById('m-list');
-            list.innerHTML = data.processes.map(p => `<li>${p}</li>`).join('');
-            document.getElementById('processModal').style.display = 'block';
-        });
-};
+    if (stats.is_saturated) {
+        saturationStatus.textContent = '⚠️ Saturada';
+        saturationCard.classList.add('alert');
+    } else {
+        saturationStatus.textContent = '✓ Normal';
+        saturationCard.classList.remove('alert');
+    }
+}
+
+function showError(message) {
+    console.error(message);
+}

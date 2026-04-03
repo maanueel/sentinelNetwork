@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Monitor de Red</title>
+    <title>Sentinel - Monitor de Red</title>
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -11,10 +11,10 @@
         <header>
             <h1>🌐 Monitor de Red Local</h1>
             <div class="header-actions">
-    <button id="processBtn" class="btn btn-purple">⚙️ Procesos</button>
-    <button id="scanBtn" class="btn btn-primary">🔄 Escanear Ahora</button>
-    <button id="exportBtn" class="btn btn-success">📊 Exportar Excel</button>
-        </div>
+                <button id="processBtn" class="btn btn-purple">⚙️ Ver Procesos</button>
+                <button id="scanBtn" class="btn btn-primary">🔄 Escanear Ahora</button>
+                <button id="exportBtn" class="btn btn-success">📊 Exportar Excel</button>
+            </div>
         </header>
 
         <section class="stats-grid">
@@ -52,7 +52,7 @@
         </section>
 
         <section class="devices-section">
-            <h2>Dispositivos en Red</h2>
+            <h2>Dispositivos Detectados</h2>
             <div class="table-container">
                 <table id="devicesTable">
                     <thead>
@@ -66,11 +66,12 @@
                             <th>Disco</th>
                             <th>Red</th>
                             <th>Estado</th>
+                            <th>Acciones</th>
                         </tr>
                     </thead>
                     <tbody id="devicesBody">
                         <tr>
-                            <td colspan="9" class="loading">Cargando dispositivos...</td>
+                            <td colspan="10" class="loading">Cargando dispositivos...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -79,36 +80,5 @@
     </div>
 
     <script src="js/app.js"></script>
-    <div id="processModal" style="display:none; position:fixed; z-index:1000; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.8); backdrop-filter:blur(4px);">
-    <div style="background:#1e293b; margin:10% auto; padding:25px; width:40%; border-radius:12px; color:white; border:1px solid #334155; box-shadow:0 20px 25px -5px rgba(0,0,0,0.5);">
-        <h2 id="m-hostname" style="color:#a855f7; font-size:1.5rem; margin-bottom:15px; font-weight:bold;">Detalles del Equipo</h2>
-        <div style="margin-bottom:20px; line-height:1.8;">
-            <p><strong>🖥️ Procesador:</strong> <span id="m-cpu" style="color:#cbd5e1;"></span></p>
-            <p><strong>💾 RAM Total:</strong> <span id="m-ram" style="color:#cbd5e1;"></span></p>
-        </div>
-        <h3 style="color:#f472b6; margin-bottom:10px;">Top 10 Procesos Activos:</h3>
-        <ul id="m-list" style="list-style:none; padding:0; color:#94a3b8;"></ul>
-        <button onclick="document.getElementById('processModal').style.display='none'" style="margin-top:20px; background:#ef4444; color:white; padding:8px 20px; border:none; border-radius:6px; cursor:pointer; width:100%;">Cerrar Ventana</button>
-    </div>
-</div>
-
-<script>
-// Función para el botón superior
-function openProcessView() {
-    const targetIp = "192.168.1.22"; // IP por defecto o la seleccionada
-    const modal = document.getElementById('processModal');
-    modal.style.display = 'block';
-    
-    fetch(`/api/processes/${targetIp}`)
-        .then(res => res.json())
-        .then(data => {
-            document.getElementById('m-hostname').innerText = data.hostname;
-            document.getElementById('m-cpu').innerText = data.cpu_model;
-            document.getElementById('m-ram').innerText = data.total_ram;
-            document.getElementById('m-list').innerHTML = data.processes.map(p => `<li style="padding:4px 0; border-bottom:1px solid #334155;">⚡ ${p}</li>`).join('');
-        });
-}
-// Asegúrate de que tu botón superior tenga: onclick="openProcessView()"
-</script>
 </body>
 </html>

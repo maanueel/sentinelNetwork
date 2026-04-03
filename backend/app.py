@@ -1,6 +1,6 @@
 import threading
 import time
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, jsonify, send_from_directory, request
 from flask_cors import CORS
 from network_scanner_simple import NetworkScanner
 from device_monitor import DeviceMonitor
@@ -28,8 +28,16 @@ def background_monitoring():
             devices_data = new_devices
             network_stats = monitor.get_network_stats(devices_data)
         except Exception as e:
-            print(f"Error: {e}")
+            print(f"Error en monitoreo: {e}")
         time.sleep(30)
+
+@app.route('/')
+def index():
+    return send_from_directory(app.static_folder, 'index.html')
+
+@app.route('/procesos')
+def procesos_page():
+    return send_from_directory(app.static_folder, 'procesos.html')
 
 @app.route('/api/devices')
 def get_devices():
@@ -37,19 +45,17 @@ def get_devices():
 
 @app.route('/api/processes/<ip>')
 def get_processes(ip):
-    # Lógica para servidor local o remoto
-    if ip == scanner.get_local_ip() or ip == 'Local':
+    local_ip = scanner.get_local_ip()
+    # Si la IP es la local, usamos psutil
+    if ip == local_ip or ip == '127.0.0.1':
         return jsonify({
-            'hostname': 'Servidor Local',
+            'hostname': 'Servidor Local (server1)',
             'cpu_model': 'Procesador del Sistema',
             'total_ram': f"{round(psutil.virtual_memory().total / (1024**3), 1)} GB",
             'processes': [p.info['name'] for p in psutil.process_iter(['name'])][:10]
         })
+    # Si es remota, usamos SNMP
     return jsonify(monitor.get_process_details(ip))
-
-@app.route('/')
-def index():
-    return send_from_directory(app.static_folder, 'index.html')
 
 if __name__ == '__main__':
     t = threading.Thread(target=background_monitoring, daemon=True)
