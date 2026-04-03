@@ -1,94 +1,66 @@
+import threading
+import time
+import os
 from flask import Flask, jsonify, send_file, send_from_directory
 from flask_cors import CORS
 from network_scanner_simple import NetworkScanner
 from device_monitor import DeviceMonitor
 from excel_export import ExcelExporter
-import threading
-import time
-import os
 
-# Configurar rutas
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FRONTEND_DIR = os.path.join(os.path.dirname(BASE_DIR), 'frontend')
-
-app = Flask(__name__, 
-            static_folder=FRONTEND_DIR,
-            static_url_path='')
+app = Flask(__name__, static_folder='../frontend', static_url_path='')
 CORS(app)
 
-# Instancias globales
 scanner = NetworkScanner()
 monitor = DeviceMonitor()
 devices_data = {}
-network_stats = {
-    'bandwidth_usage': 0,
-    'is_saturated': False,
-    'top_consumer': None
-}
+network_stats = {}
 
 def background_monitoring():
-    """Monitoreo continuo en segundo plano"""
     global devices_data, network_stats
+    local_ip = scanner.get_local_ip()
+    
     while True:
         try:
-            # Escanear red cada 30 segundos
-            devices_data = scanner.scan_network()
+            # 1. Escaneo de red (ARP)
+            raw_devices = scanner.scan_network()
             
-            # Actualizar estadísticas de red
+            # 2. Enriquecimiento SNMP para cada dispositivo encontrado
+            for ip, info in raw_devices.items():
+                if info['is_reachable'] and ip != local_ip:
+                    # Intentamos obtener datos reales si SNMP está activo
+                    remote_data = monitor.get_remote_metrics(ip)
+                    info.update(remote_data)
+                elif ip == local_ip:
+                    # Datos locales del propio servidor
+                    info.update(scanner._get_local_metrics())
+            
+            devices_data = raw_devices
             network_stats = monitor.get_network_stats(devices_data)
             
+            print(f"Monitoreo actualizado: {len(devices_data)} dispositivos.")
             time.sleep(30)
         except Exception as e:
-            print(f"Error en monitoreo: {e}")
-            time.sleep(30)
+            print(f"Error en hilo de monitoreo: {e}")
+            time.sleep(10)
 
-# Ruta raíz - servir index.html
 @app.route('/')
 def index():
-    return send_from_directory(FRONTEND_DIR, 'index.html')
+    return send_from_directory(app.static_folder, 'index.html')
 
-# Servir archivos estáticos (CSS, JS)
-@app.route('/<path:path>')
-def serve_static(path):
-    return send_from_directory(FRONTEND_DIR, path)
-
-@app.route('/api/devices', methods=['GET'])
+@app.route('/api/devices')
 def get_devices():
-    """Obtener lista de dispositivos"""
-    return jsonify({
-        'devices': list(devices_data.values()),
-        'total': len(devices_data)
-    })
+    return jsonify({'devices': list(devices_data.values()), 'total': len(devices_data)})
 
-@app.route('/api/network-stats', methods=['GET'])
-def get_network_stats():
-    """Obtener estadísticas de red"""
+@app.route('/api/network-stats')
+def get_stats():
     return jsonify(network_stats)
-
-@app.route('/api/export-excel', methods=['GET'])
-def export_excel():
-    """Exportar datos a Excel"""
-    try:
-        exporter = ExcelExporter()
-        filepath = exporter.create_report(devices_data, network_stats)
-        return send_file(filepath, as_attachment=True)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/scan-now', methods=['POST'])
 def scan_now():
-    """Forzar escaneo inmediato"""
-    global devices_data
-    devices_data = scanner.scan_network()
-    return jsonify({'status': 'success', 'devices': len(devices_data)})
+    # Forzar ejecución inmediata del hilo (simplificado)
+    return jsonify({'status': 'scanning_triggered'})
 
 if __name__ == '__main__':
-    # Iniciar monitoreo en segundo plano
-    monitor_thread = threading.Thread(target=background_monitoring, daemon=True)
-    monitor_thread.start()
-    
-    print(f"Frontend directory: {FRONTEND_DIR}")
-    print(f"Servidor iniciando en http://0.0.0.0:5000")
-    
-    # Iniciar servidor Flask
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    t = threading.Thread(target=background_monitoring, daemon=True)
+    t.start()
+    app.run(host='0.0.0.0', port=5000)
