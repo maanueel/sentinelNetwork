@@ -33,7 +33,7 @@ class NetworkScanner:
                 return match.group(1)
         except:
             pass
-        return 'eth0'  # Fallback
+        return 'eth0'
     
     def scan_network(self):
         """Escanear red usando arp-scan"""
@@ -41,28 +41,38 @@ class NetworkScanner:
         network = self.get_local_network()
         interface = self.get_network_interface()
         
-        print(f"Escaneando red: {network} en interfaz {interface}")
+        print(f"\n=== Iniciando escaneo de red ===")
+        print(f"Red: {network}")
+        print(f"Interfaz: {interface}")
         
         try:
-            # Intentar con arp-scan primero (más rápido y efectivo)
             result = subprocess.run(
-                ['sudo', 'arp-scan', '--interface', interface, '--localnet'],
+                ['sudo', 'arp-scan', '--localnet'],
                 capture_output=True,
                 text=True,
                 timeout=30
             )
             
+            print(f"Código de salida arp-scan: {result.returncode}")
+            
             if result.returncode == 0:
                 lines = result.stdout.split('\n')
+                
                 for line in lines:
-                    # Formato: IP    MAC    Vendor
-                    parts = line.split('\t')
+                    # Dividir por espacios/tabs
+                    parts = line.split()
+                    
+                    # Verificar que tenga al menos IP y MAC
                     if len(parts) >= 2:
-                        ip_match = re.match(r'(\d+\.\d+\.\d+\.\d+)', parts[0].strip())
-                        if ip_match:
-                            ip = ip_match.group(1)
-                            mac = parts[1].strip() if len(parts) > 1 else 'Desconocido'
-                            vendor = parts[2].strip() if len(parts) > 2 else 'Desconocido'
+                        # Verificar si es una IP válida
+                        if re.match(r'^\d+\.\d+\.\d+\.\d+$', parts[0]):
+                            ip = parts[0]
+                            mac = parts[1]
+                            vendor = ' '.join(parts[2:]) if len(parts) > 2 else ''
+                            
+                            # Limpiar vendor
+                            if '(Unknown' in vendor or 'locally administered' in vendor:
+                                vendor = ''
                             
                             devices[ip] = {
                                 'ip': ip,
@@ -76,23 +86,15 @@ class NetworkScanner:
                                 'network_usage': 0,
                                 'is_reachable': True
                             }
+                            
+                            print(f"  Encontrado: {ip} - {mac} - {vendor}")
                 
                 print(f"arp-scan encontró {len(devices)} dispositivos")
-            else:
-                # Si arp-scan falla, usar nmap como respaldo
-                print("arp-scan falló, usando nmap...")
-                devices = self._scan_with_nmap(network)
-        
-        except FileNotFoundError:
-            # arp-scan no está instalado, usar nmap
-            print("arp-scan no disponible, usando nmap...")
-            devices = self._scan_with_nmap(network)
-        
+            
         except Exception as e:
-            print(f"Error en escaneo: {e}")
-            devices = self._scan_with_nmap(network)
+            print(f"Error en arp-scan: {e}")
         
-        # Agregar el servidor local con métricas completas
+        # Agregar el servidor local
         local_ip = self.get_local_ip()
         if local_ip not in devices:
             devices[local_ip] = {
@@ -106,54 +108,7 @@ class NetworkScanner:
         
         devices[local_ip].update(self._get_local_metrics())
         
-        return devices
-    
-    def _scan_with_nmap(self, network):
-        """Escaneo con nmap como respaldo"""
-        devices = {}
-        
-        try:
-            result = subprocess.run(
-                ['sudo', 'nmap', '-sn', network],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            
-            lines = result.stdout.split('\n')
-            current_ip = None
-            
-            for line in lines:
-                ip_match = re.search(r'Nmap scan report for .*\((\d+\.\d+\.\d+\.\d+)\)', line)
-                if not ip_match:
-                    ip_match = re.search(r'Nmap scan report for (\d+\.\d+\.\d+\.\d+)', line)
-                
-                if ip_match:
-                    current_ip = ip_match.group(1)
-                    devices[current_ip] = {
-                        'ip': current_ip,
-                        'mac': 'Desconocido',
-                        'hostname': self._get_hostname(current_ip),
-                        'vendor': 'Desconocido',
-                        'model': 'Desconocido',
-                        'cpu_usage': 0,
-                        'ram_usage': 0,
-                        'disk_usage': 0,
-                        'network_usage': 0,
-                        'is_reachable': True
-                    }
-                
-                if current_ip:
-                    mac_match = re.search(r'MAC Address: ([0-9A-F:]{17})', line, re.IGNORECASE)
-                    if mac_match:
-                        mac = mac_match.group(1)
-                        devices[current_ip]['mac'] = mac
-                        devices[current_ip]['vendor'] = self._get_vendor(mac)
-            
-            print(f"nmap encontró {len(devices)} dispositivos")
-        
-        except Exception as e:
-            print(f"Error en nmap: {e}")
+        print(f"Total final: {len(devices)} dispositivos\n")
         
         return devices
     
@@ -169,38 +124,39 @@ class NetworkScanner:
     
     def _get_hostname(self, ip):
         try:
-            return socket.gethostbyaddr(ip)[0]
+            hostname = socket.gethostbyaddr(ip)[0]
+            return hostname
         except:
             return "Desconocido"
     
     def _get_vendor(self, mac):
-        """Mapeo básico de fabricantes por MAC"""
+        """Mapeo de fabricantes por MAC"""
         if not mac or mac == 'Desconocido':
             return 'Desconocido'
-            
-        vendors = {
-            '00:50:56': 'VMware',
-            '00:0C:29': 'VMware',
-            '00:1A:A0': 'Dell',
-            '00:14:22': 'Dell',
-            'B8:27:EB': 'Raspberry Pi',
-            'DC:A6:32': 'Raspberry Pi',
-            'E4:5F:01': 'Raspberry Pi',
-            '28:C6:3F': 'Apple',
-            'F0:18:98': 'Apple',
-            '08:00:27': 'VirtualBox',
-            '52:54:00': 'QEMU/KVM',
-            '00:15:5D': 'Microsoft Hyper-V',
-            '00:1B:21': 'Intel',
-            '00:1E:68': 'Cisco',
-            'D8:BB:C1': 'TP-Link',
-            'E8:94:F6': 'TP-Link',
-            '50:C7:BF': 'TP-Link',
-        }
         
         mac_upper = mac.upper().replace(':', '')
+        
+        vendors = {
+            '60109E': 'Huawei',
+            'A8944A': 'Chongqing Fugui',
+            '5A5ACB': 'Desconocido',
+            'FEFD44': 'Desconocido',
+            'D8C80C': 'Desconocido',
+            '080027': 'VirtualBox',
+            '00505': 'VMware',
+            '000C29': 'VMware',
+            '001AA0': 'Dell',
+            'B827EB': 'Raspberry Pi',
+            'DCA632': 'Raspberry Pi',
+            'E45F01': 'Raspberry Pi',
+            '28C63F': 'Apple',
+            'F01898': 'Apple',
+            '52540': 'QEMU',
+            '00155D': 'Microsoft',
+        }
+        
         for prefix, vendor in vendors.items():
-            if mac_upper.startswith(prefix.replace(':', '')):
+            if mac_upper.startswith(prefix):
                 return vendor
         
         return 'Desconocido'
